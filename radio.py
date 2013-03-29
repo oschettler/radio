@@ -1,18 +1,68 @@
 #!/usr/bin/python
 
 from Adafruit_CharLCDPlate import Adafruit_CharLCDPlate
+import subprocess
 
 DEBUG = True
 
-class Folder:
-  def __init__(self):
-    self.items = (
-      'aaa',
-      'bbb',
-      'ccc',
-      'ddd',
-      'eee'
-    )
+class Node:
+  def __init__(self, text):
+    self.mark = ''
+    self.parent = None
+    self.text = text
+  
+  def into(self):
+    pass
+  
+  def __repr__(self):
+    return 'node:' + self.text
+
+
+class Folder(Node):
+  def __init__(self, text, items=[]):
+    Node.__init__(self, text)
+    self.mark = '>'
+    self.setItems(items)
+  
+  def setItems(self, items):
+    self.items = items
+    for item in self.items:
+      item.parent = self
+
+
+class Playlists(Folder):
+  def __init__(self, radio):
+    Folder.__init__(self, 'Playlists')
+    self.radio = radio
+
+  def into(self):
+    print "into", repr(self)
+    self.setItems([
+      Playlist(playlist, self.radio) for playlist in self.radio.command('mpc lsplaylists')
+    ])
+
+
+class Widget(Node):
+  pass
+
+
+class Playlist(Widget):
+  def __init__(self, text, radio):
+    Node.__init__(self, text)
+    self.radio = radio
+  
+  def run(self):
+    self.radio.command('mpc clear')
+    self.radio.command('mpc load ' + self.text)
+    self.radio.command('mpc play')
+    self.radio.command('mpc volume 70')
+    
+    self.radio.lcd.home()
+    
+    status = self.radio.command('mpc status')
+    print status
+    self.radio.lcd.message(status)
+
 
 class App:
   ROWS = 2
@@ -41,13 +91,13 @@ class App:
         str += '\n'
       if row < len(self.folder.items):
         if row == self.selected:
-          line = '-' + self.folder.items[row]
+          line = '-' + self.folder.items[row].text + self.folder.items[row].mark
           if len(line) < self.COLS:
             for row in range(len(line), self.COLS):
               line += ' '
           str += line
         else:
-          line = ' ' + self.folder.items[row]
+          line = ' ' + self.folder.items[row].text + self.folder.items[row].mark
           if len(line) < self.COLS:
             for row in range(len(line), self.COLS):
               line += ' '
@@ -84,25 +134,27 @@ class App:
 
 
   def left(self):
-    if isinstance(self.folder.parent, Folder):
-      # find the current in the parent
-      itemno = 0
-      index = 0
-      for item in self.folder.parent.items:
-        if self.folder == item:
-          if DEBUG:
-            print('foundit')
-          index = itemno
-        else:
-            itemno += 1
-      if index < len(self.folder.parent.items):
-        self.folder = self.folder.parent
-        self.top = index
-        self.selected = index
+    if not isinstance(self.folder.parent, Folder):
+      return 
+    
+    # find the current in the parent
+    itemno = 0
+    index = 0
+    for item in self.folder.parent.items:
+      if self.folder == item:
+        if DEBUG:
+          print 'foundit:', item
+        index = itemno
       else:
-        self.folder = self.folder.parent
-        self.top = 0
-        self.selected = 0
+          itemno += 1
+    if index < len(self.folder.parent.items):
+      self.folder = self.folder.parent
+      self.top = index
+      self.selected = index
+    else:
+      self.folder = self.folder.parent
+      self.top = 0
+      self.selected = 0
 
 
   def right(self):
@@ -110,21 +162,14 @@ class App:
       self.folder = self.folder.items[self.selected]
       self.top = 0
       self.selected = 0
+      self.folder.into()
     elif isinstance(self.folder.items[self.selected], Widget):
-      if DEBUG:
-          print('eval', self.folder.items[self.selected].function)
-      eval(self.folder.items[self.selected].function+'()')
-    elif isinstance(self.folder.items[self.selected], CommandToRun):
-      self.folder.items[self.selected].Run()
+      self.folder.items[self.selected].run()
 
 
   def select(self):
-    if DEBUG:
-      print('check widget')
-    if isinstance(self.cur.items[self.selected], Widget):
-      if DEBUG:
-        print('eval', self.folder.items[self.selected].function)
-      eval(self.folder.items[self.selected].function+'()')
+    if isinstance(self.folder.items[self.selected], Widget):
+      self.folder.items[self.selected].run()
 
 
   def run(self):
@@ -159,9 +204,37 @@ class App:
         self.display()
 
 
+class Radio(App):
+  def __init__(self):
+    App.__init__(self,
+      Adafruit_CharLCDPlate(), 
+      Folder('Pauls iRadio', (
+        Playlists(self),
+        Folder('bbb', (
+          Node('b.1'), 
+          Node('b.2'), 
+          Node('b.3')
+        )),
+        Node('ccc'),
+        Node('ddd'),
+        Node('eee')
+      ))
+    )
+  
+  def command(self,cmd):
+    p = subprocess.Popen(
+      cmd, shell=True, bufsize=256, stdout=subprocess.PIPE
+    ).stdout
+
+    result = []
+    while True:
+      line = p.readline().rstrip('\n')
+      if not line:
+        break
+      result.append(line) 
+    
+    return result
+
 
 if __name__ == '__main__':
-  lcd = Adafruit_CharLCDPlate()
-  folder = Folder()
-  app = App(lcd, folder)
-  app.run()
+  Radio().run()
