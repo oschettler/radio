@@ -1,13 +1,13 @@
 #!/usr/bin/python
 
 from Adafruit_CharLCDPlate import Adafruit_CharLCDPlate
-import subprocess
+import shlex, subprocess
 
 DEBUG = True
 
 class Node:
   def __init__(self, text):
-    self.mark = ''
+    self.mark = '-'
     self.parent = None
     self.text = text
   
@@ -42,28 +42,6 @@ class Playlists(Folder):
     ])
 
 
-class Widget(Node):
-  pass
-
-
-class Playlist(Widget):
-  def __init__(self, text, radio):
-    Node.__init__(self, text)
-    self.radio = radio
-  
-  def run(self):
-    self.radio.command('mpc clear')
-    self.radio.command('mpc load ' + self.text)
-    self.radio.command('mpc play')
-    self.radio.command('mpc volume 70')
-    
-    self.radio.lcd.home()
-    
-    status = self.radio.command('mpc status')
-    print status
-    self.radio.lcd.message(status)
-
-
 class App:
   ROWS = 2
   COLS = 16
@@ -91,13 +69,13 @@ class App:
         str += '\n'
       if row < len(self.folder.items):
         if row == self.selected:
-          line = '-' + self.folder.items[row].text + self.folder.items[row].mark
+          line = self.folder.items[row].mark + self.folder.items[row].text
           if len(line) < self.COLS:
             for row in range(len(line), self.COLS):
               line += ' '
           str += line
         else:
-          line = ' ' + self.folder.items[row].text + self.folder.items[row].mark
+          line = ' ' + self.folder.items[row].text
           if len(line) < self.COLS:
             for row in range(len(line), self.COLS):
               line += ' '
@@ -163,13 +141,20 @@ class App:
       self.top = 0
       self.selected = 0
       self.folder.into()
-    elif isinstance(self.folder.items[self.selected], Widget):
+    elif isinstance(self.folder.items[self.selected], Applet):
       self.folder.items[self.selected].run()
 
 
   def select(self):
-    if isinstance(self.folder.items[self.selected], Widget):
+    if isinstance(self.folder.items[self.selected], Applet):
       self.folder.items[self.selected].run()
+
+
+  def command(self, cmd):
+    result = subprocess.check_output(
+      shlex.split(cmd), stderr=subprocess.STDOUT,
+    )
+    return result.split('\n')
 
 
   def run(self):
@@ -220,20 +205,34 @@ class Radio(App):
         Node('eee')
       ))
     )
-  
-  def command(self,cmd):
-    p = subprocess.Popen(
-      cmd, shell=True, bufsize=256, stdout=subprocess.PIPE
-    ).stdout
 
-    result = []
-    while True:
-      line = p.readline().rstrip('\n')
-      if not line:
-        break
-      result.append(line) 
-    
-    return result
+
+class Applet(App):
+  def __init__(self, text, app):
+    self.mark = '*'
+    self.parent = None
+    self.text = text
+    self.app = app
+    self.lcd = app.lcd
+
+  def command(self, cmd):
+    return self.app.command(cmd)
+
+
+class Playlist(Applet):
+  def display(self):
+    self.lcd.home()
+
+    status = self.command("mpc --format '[%title% (%name%)]'")
+    print status
+    self.lcd.message(status)
+
+  def run(self):
+    self.command('mpc clear')
+    self.command('mpc load ' + self.text)
+    self.command('mpc play')
+
+    Applet.run(self)
 
 
 if __name__ == '__main__':
