@@ -360,7 +360,7 @@ class Playlist(Applet):
     except:
       pos = 0
 
-    if pos < len(self.volumes):
+    if pos < len(self.volumes) - 1:
       self.command('mpc volume %d' % self.volumes[pos + 1]) 
 
   def down(self):
