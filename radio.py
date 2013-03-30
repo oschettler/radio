@@ -1,9 +1,17 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
 
 from Adafruit_CharLCDPlate import Adafruit_CharLCDPlate
 import shlex, subprocess
+from time import sleep
+from unidecode import unidecode
 
 DEBUG = True
+
+def fixed_length(str, length):
+  'Truncate and pad str to length'
+  return ('{:<%d}' % length).format(str[:length])
+
 
 class Node:
   def __init__(self, text):
@@ -42,6 +50,10 @@ class Playlists(Folder):
     ])
 
 
+class FinishException(Exception):
+  pass
+
+
 class App:
   ROWS = 2
   COLS = 16
@@ -61,7 +73,7 @@ class App:
       self.top = 0
     
     if DEBUG:
-      print('------------------')
+      print '------------------'
     
     str = ''
     for row in range(self.top, self.top + self.ROWS):
@@ -69,23 +81,18 @@ class App:
         str += '\n'
       if row < len(self.folder.items):
         if row == self.selected:
-          line = self.folder.items[row].mark + self.folder.items[row].text
-          if len(line) < self.COLS:
-            for row in range(len(line), self.COLS):
-              line += ' '
-          str += line
+          line = self.folder.items[row].mark
         else:
-          line = ' ' + self.folder.items[row].text
-          if len(line) < self.COLS:
-            for row in range(len(line), self.COLS):
-              line += ' '
-          str += line
+          line = ' '
+        
+        line = fixed_length(line + self.folder.items[row].text, self.COLS)
+        str += line
 
         if DEBUG:
-          print('|'+line+'|')
+          print('|' + line + '|')
 
     if DEBUG:
-      print('------------------')
+      print '------------------'
 
     self.lcd.home()
     self.lcd.message(str)
@@ -151,43 +158,59 @@ class App:
 
 
   def command(self, cmd):
+    print shlex.split(cmd)
     result = subprocess.check_output(
-      shlex.split(cmd), stderr=subprocess.STDOUT,
+      shlex.split(cmd), stderr=subprocess.STDOUT
     )
-    return result.split('\n')
+    result = result.rstrip().split('\n')
+    print cmd, '-->', result
+    return result
+
+
+  def tick(self):
+    pass
 
 
   def run(self):
+    self.ticks = 0
     self.display()
     
     last_buttons = None
 
     while True:
+      self.tick()
+      self.ticks += 1
+      sleep(0.1)
+
       buttons = self.lcd.buttons()
       if last_buttons == buttons:
         continue
       last_buttons = buttons
-        
-      if (self.lcd.buttonPressed(self.lcd.LEFT)):
-        self.left()
-        self.display()
+      
+      try:
+        if (self.lcd.buttonPressed(self.lcd.LEFT)):
+          self.left()
+          self.display()
 
-      if (self.lcd.buttonPressed(self.lcd.UP)):
-        self.up()
-        self.display()
+        if (self.lcd.buttonPressed(self.lcd.UP)):
+          self.up()
+          self.display()
 
-      if (self.lcd.buttonPressed(self.lcd.DOWN)):
-        self.down()
-        self.display()
+        if (self.lcd.buttonPressed(self.lcd.DOWN)):
+          self.down()
+          self.display()
 
-      if (self.lcd.buttonPressed(self.lcd.RIGHT)):
-        self.right()
-        self.display()
+        if (self.lcd.buttonPressed(self.lcd.RIGHT)):
+          self.right()
+          self.display()
 
-      if (self.lcd.buttonPressed(self.lcd.SELECT)):
-        self.select()
-        self.display()
-
+        if (self.lcd.buttonPressed(self.lcd.SELECT)):
+          self.select()
+          self.display()
+      
+      except FinishException:
+        return
+      
 
 class Radio(App):
   def __init__(self):
@@ -221,11 +244,46 @@ class Applet(App):
 
 class Playlist(Applet):
   def display(self):
-    self.lcd.home()
+    self.lines = (
+      unidecode(self.command('mpc -f %name% current')[0].split(',', 1)[0]),
+      unidecode(self.command('mpc -f %title% current')[0]),
+    )
+    self.dir = 'L'
+    self.shift = 0
 
-    status = self.command("mpc --format '[%title% (%name%)]'")
-    print status
-    self.lcd.message(status)
+
+  def tick(self):
+    if self.ticks % 5 != 0:
+      return
+      
+    if self.lines[0] == '':
+      self.command('mpc volume 70')
+      self.display()
+      return
+
+    str = ''
+    str += fixed_length(self.lines[0], self.COLS)
+    str += '\n' + fixed_length(self.lines[1][self.shift:], self.COLS)
+    if DEBUG:
+      print '------------------'
+      for line in str.split('\n'):
+        print '|' + line + '|'
+      print '------------------'
+    
+    self.lcd.home()
+    self.lcd.message(str)
+    
+    if self.dir == 'L':
+      if self.shift + self.COLS < len(self.lines[1]):
+        self.shift += 1
+      else:
+        self.dir = 'R'
+    else:
+      if self.shift > 0:
+        self.shift -= 1
+      else:
+        self.display()
+
 
   def run(self):
     self.command('mpc clear')
@@ -233,6 +291,15 @@ class Playlist(Applet):
     self.command('mpc play')
 
     Applet.run(self)
+
+
+  def left(self):
+    'Return from applet'
+    raise FinishException
+  
+
+  def right(self):
+    return
 
 
 if __name__ == '__main__':
