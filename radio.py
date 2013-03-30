@@ -11,11 +11,12 @@
 #
 
 from Adafruit_CharLCDPlate import Adafruit_CharLCDPlate
+import re
 import shlex, subprocess
 from time import strftime, sleep
 from unidecode import unidecode
 
-DEBUG = True
+DEBUG = False
 
 def fixed_length(str, length):
   'Truncate and pad str to length'
@@ -248,8 +249,11 @@ class App:
 
 class Radio(App):
   '''
-  The application. '''
+  The application.
+  '''
   def __init__(self):
+    self.command('mpc stop')
+
     App.__init__(self,
       Adafruit_CharLCDPlate(), 
       Folder('Pauls iRadio', (
@@ -257,11 +261,7 @@ class Radio(App):
         Folder('Settings', (
           Node(self.command('hostname -I')[0]), 
           Timer(), 
-          Node('b.3')
         )),
-        Node('ccc'),
-        Node('ddd'),
-        Node('eee')
       ))
     )
 
@@ -294,11 +294,18 @@ class Applet(App):
 
 
 class Playlist(Applet):
+  volumes = (0, 60, 70, 80, 85, 90, 95, 100)
+  
   def display(self):
     self.lines = (
       unidecode(self.command('mpc -f %name% current')[0].split(',', 1)[0]),
       unidecode(self.command('mpc -f %title% current')[0]),
     )
+    
+    self.volume = int(re.search(r'\d+', 
+      self.command('mpc volume')[0]
+    ).group())
+    
     self.dir = 'L'
     self.shift = 0
 
@@ -343,11 +350,27 @@ class Playlist(Applet):
 
     Applet.run(self)
 
-
   def left(self):
     'Return from applet'
     raise FinishException
   
+  def up(self):
+    try:
+      pos = self.volumes.index(self.volume)
+    except:
+      pos = 0
+
+    if pos < len(self.volumes):
+      self.command('mpc volume %d' % self.volumes[pos + 1]) 
+
+  def down(self):
+    try:
+      pos = self.volumes.index(self.volume)
+    except:
+      pos = 0
+
+    if pos > 0:
+      self.command('mpc volume %d' % self.volumes[pos - 1]) 
 
 
 if __name__ == '__main__':
