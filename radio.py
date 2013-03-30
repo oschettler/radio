@@ -1,9 +1,18 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+#
+# A simple internet radio for RaspberryPI
+# Based on mpd/mpc and the Character LCD Plate by Adafruit
+#
+# The basic navigation code is based on lcdmenu.py by Alan Aufderheide
+#
+# Copyright (c) 2013 Olav Schettler
+# Open source. MIT license
+#
 
 from Adafruit_CharLCDPlate import Adafruit_CharLCDPlate
 import shlex, subprocess
-from time import sleep
+from time import strftime, sleep
 from unidecode import unidecode
 
 DEBUG = True
@@ -14,6 +23,9 @@ def fixed_length(str, length):
 
 
 class Node:
+  '''
+  Base class for nodes in a hierarchical navigation tree
+  '''
   def __init__(self, text):
     self.mark = '-'
     self.parent = None
@@ -25,6 +37,18 @@ class Node:
   def __repr__(self):
     return 'node:' + self.text
 
+
+class Timer(Node):
+  def __init__(self):
+    self.mark = '-'
+    self.parent = None
+  
+  def gettext(self):
+    print "TT"
+    return strftime('%H:%M:%S %d.%m')
+
+  text = property(gettext)
+  
 
 class Folder(Node):
   def __init__(self, text, items=[]):
@@ -55,6 +79,9 @@ class FinishException(Exception):
 
 
 class App:
+  '''
+  Base class of applications and applets
+  '''
   ROWS = 2
   COLS = 16
   
@@ -168,10 +195,17 @@ class App:
 
 
   def tick(self):
-    pass
+    '''
+    In case variable information is displayed, refresh every second
+    '''
+    if self.ticks % 10 == 0:
+      self.display()
 
 
   def run(self):
+    '''
+    Basic event loop of the application
+    '''
     self.ticks = 0
     self.display()
     
@@ -213,14 +247,16 @@ class App:
       
 
 class Radio(App):
+  '''
+  The application. '''
   def __init__(self):
     App.__init__(self,
       Adafruit_CharLCDPlate(), 
       Folder('Pauls iRadio', (
         Playlists(self),
-        Folder('bbb', (
-          Node('b.1'), 
-          Node('b.2'), 
+        Folder('Settings', (
+          Node(self.command('hostname -I')[0]), 
+          Timer(), 
           Node('b.3')
         )),
         Node('ccc'),
@@ -240,6 +276,21 @@ class Applet(App):
 
   def command(self, cmd):
     return self.app.command(cmd)
+
+  def left(self):
+    return
+
+  def right(self):
+    return
+
+  def up(self):
+    return
+
+  def down(self):
+    return
+
+  def select(self):
+    return
 
 
 class Playlist(Applet):
@@ -297,9 +348,6 @@ class Playlist(Applet):
     'Return from applet'
     raise FinishException
   
-
-  def right(self):
-    return
 
 
 if __name__ == '__main__':
