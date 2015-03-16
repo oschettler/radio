@@ -17,7 +17,7 @@ export HOME
 case "$1" in
     start)
         echo "Starting Radio"
-        /home/olav/work/radio/radio.py  2>&1 &
+        /home/pi/radio/radio.py  2>&1 &
     ;;
     stop)
         echo "Stopping Radio"
