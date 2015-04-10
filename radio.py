@@ -9,6 +9,8 @@
 # Copyright (c) 2013 Olav Schettler
 # Open source. MIT license
 #
+import signal
+import sys
 
 from Adafruit_CharLCDPlate import Adafruit_CharLCDPlate
 import re
@@ -85,24 +87,23 @@ class App:
   '''
   ROWS = 2
   COLS = 16
-  
+
   def __init__(self, lcd, folder):
     self.lcd = lcd
     self.folder = folder
     self.top = 0
     self.selected = 0
 
-  
   def display(self):
     if self.top > len(self.folder.items) - self.ROWS:
       self.top = len(self.folder.items) - self.ROWS
-    
+
     if self.top < 0:
       self.top = 0
-    
+
     if DEBUG:
       print '------------------'
-    
+
     str = ''
     for row in range(self.top, self.top + self.ROWS):
       if row > self.top:
@@ -112,7 +113,7 @@ class App:
           line = self.folder.items[row].mark
         else:
           line = ' '
-        
+
         line = fixed_length(line + self.folder.items[row].text, self.COLS)
         str += line
 
@@ -148,8 +149,8 @@ class App:
 
   def left(self):
     if not isinstance(self.folder.parent, Folder):
-      return 
-    
+      return
+
     # find the current in the parent
     itemno = 0
     index = 0
@@ -203,13 +204,22 @@ class App:
       self.display()
 
 
+  def handlesignal(self, signum, frame):
+    self.lcd.clear()
+    self.lcd.backlight(Adafruit_CharLCDPlate.OFF)
+    sys.exit(0)
+
   def run(self):
     '''
     Basic event loop of the application
     '''
+    'catch shutdown'
+    signal.signal(signal.SIGTERM, self.handlesignal)
+
     self.ticks = 0
     self.display()
-    
+
+
     last_buttons = None
 
     while True:
@@ -221,7 +231,7 @@ class App:
       if last_buttons == buttons:
         continue
       last_buttons = buttons
-      
+
       try:
         if (self.lcd.buttonPressed(self.lcd.LEFT)):
           self.left()
@@ -242,10 +252,9 @@ class App:
         if (self.lcd.buttonPressed(self.lcd.SELECT)):
           self.select()
           self.display()
-      
+
       except FinishException:
         return
-      
 
 class Radio(App):
   '''
@@ -255,16 +264,15 @@ class Radio(App):
     self.command('mpc stop')
 
     App.__init__(self,
-      Adafruit_CharLCDPlate(), 
+      Adafruit_CharLCDPlate(),
       Folder('Pauls iRadio', (
         Playlists(self),
         Folder('Settings', (
-          Node(self.command('hostname -I')[0]), 
-          Timer(), 
+          Node(self.command('hostname -I')[0]),
+          Timer(),
         )),
       ))
     )
-
 
 class Applet(App):
   def __init__(self, text, app):
@@ -295,17 +303,17 @@ class Applet(App):
 
 class Playlist(Applet):
   volumes = (0, 60, 70, 80, 85, 90, 95, 100)
-  
+
   def display(self):
     self.lines = (
       unidecode(self.command('mpc -f %name% current')[0].split(',', 1)[0]),
       unidecode(self.command('mpc -f %title% current')[0]),
     )
-    
-    self.volume = int(re.search(r'\d+', 
+
+    self.volume = int(re.search(r'\d+',
       self.command('mpc volume')[0]
     ).group())
-    
+
     self.dir = 'L'
     self.shift = 0
 
@@ -313,7 +321,7 @@ class Playlist(Applet):
   def tick(self):
     if self.ticks % 5 != 0:
       return
-      
+
     if self.lines[0] == '':
       self.command('mpc volume 70')
       self.display()
@@ -327,10 +335,10 @@ class Playlist(Applet):
       for line in str.split('\n'):
         print '|' + line + '|'
       print '------------------'
-    
+
     self.lcd.home()
     self.lcd.message(str)
-    
+
     if self.dir == 'L':
       if self.shift + self.COLS < len(self.lines[1]):
         self.shift += 1
@@ -353,7 +361,7 @@ class Playlist(Applet):
   def left(self):
     'Return from applet'
     raise FinishException
-  
+
   def up(self):
     try:
       pos = self.volumes.index(self.volume)
@@ -361,7 +369,7 @@ class Playlist(Applet):
       pos = 0
 
     if pos < len(self.volumes) - 1:
-      self.command('mpc volume %d' % self.volumes[pos + 1]) 
+      self.command('mpc volume %d' % self.volumes[pos + 1])
 
   def down(self):
     try:
@@ -370,7 +378,7 @@ class Playlist(Applet):
       pos = 0
 
     if pos > 0:
-      self.command('mpc volume %d' % self.volumes[pos - 1]) 
+      self.command('mpc volume %d' % self.volumes[pos - 1])
 
 
 if __name__ == '__main__':

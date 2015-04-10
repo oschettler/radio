@@ -12,17 +12,18 @@
 #! /bin/sh
 # /etc/init.d/radio
 
+DAEMON='/home/pi/radio/radio.py 2>&1'
+PIDFILE=/var/run/radio.pid
 
 export HOME
 case "$1" in
     start)
         echo "Starting Radio"
-        /home/pi/radio/radio.py  2>&1 &
+	start-stop-daemon --start --make-pidfile --pidfile $PIDFILE --exec $DAEMON -b
     ;;
     stop)
         echo "Stopping Radio"
-	RADIO_PID=`ps auxwww | grep radio.py | head -1 | awk '{print $2}'`
-	kill -9 $RADIO_PID
+	start-stop-daemon --stop --pidfile $PIDFILE --retry 5
     ;;
     *)
         echo "Usage: /etc/init.d/radio {start|stop}"
